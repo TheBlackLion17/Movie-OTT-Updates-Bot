@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
+# httpx request logs can include the bot token in Telegram API URLs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("movie-ott")
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
@@ -95,11 +97,16 @@ async def notify_log(message):
                 f"https://api.telegram.org/bot{TOKEN}/sendMessage",
                 json={"chat_id": LOG_CHANNEL, "text": message[:4000],
                       "disable_web_page_preview": True})
-            response.raise_for_status()
-            if not response.json().get("ok"):
-                raise RuntimeError("Telegram rejected log notification")
+            payload = response.json()
+            if not response.is_success or not payload.get("ok"):
+                # Telegram descriptions are useful (e.g. chat not found), unlike
+                # httpx exceptions whose URLs contain the private bot token.
+                description = payload.get("description", "Unknown Telegram error")
+                log.warning("Log channel notification failed (HTTP %s): %s",
+                            response.status_code, description)
     except Exception as exc:
         # Never crash publishing because the optional log channel failed.
+        # Avoid logging exception URLs, which can contain the bot token.
         log.warning("Log channel notification failed: %s", type(exc).__name__)
 
 
