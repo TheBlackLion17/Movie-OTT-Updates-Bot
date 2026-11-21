@@ -1,6 +1,7 @@
 """Movie & OTT Telegram channel publisher. Run: python -m app.main"""
 import asyncio
 import html
+import json
 import logging
 import os
 import random
@@ -169,33 +170,29 @@ async def publish(client, item):
     if DRY:
         log.info("DRY RUN: %s (%s)", name, language)
         return False
+    # Download the poster ourselves; Telegram cannot always fetch TMDb image URLs.
+    # Do not publish a text-only substitute: the poster is required.
+    image_response = await client.get(poster, follow_redirects=True)
+    if not image_response.is_success:
+        raise RuntimeError(f"TMDb poster download failed (HTTP {image_response.status_code})")
+    content_type = image_response.headers.get("content-type", "").split(";")[0].lower()
+    if content_type not in ("image/jpeg", "image/png"):
+        raise RuntimeError(f"TMDb poster returned unsupported content type: {content_type}")
+    photo_bytes = image_response.content
+    if not photo_bytes or len(photo_bytes) > 10 * 1024 * 1024:
+        raise RuntimeError("TMDb poster is empty or exceeds Telegram's 10 MB photo limit")
     response = await client.post(
         f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
-        json={"chat_id": CHANNEL, "photo": poster, "caption": caption,
-              "parse_mode": "HTML", "reply_markup": {"inline_keyboard": buttons}})
+        data={"chat_id": CHANNEL, "caption": caption, "parse_mode": "HTML",
+              "reply_markup": json.dumps({"inline_keyboard": buttons})},
+        files={"photo": ("poster.jpg" if content_type == "image/jpeg" else "poster.png",
+                         photo_bytes, content_type)},
+        timeout=60,
+    )
     result = response.json()
     if not response.is_success or not result.get("ok"):
         description = result.get("description", "Unknown Telegram error")
-        log.warning("Telegram sendPhoto failed (HTTP %s): %s", response.status_code, description)
-        # Telegram sometimes cannot fetch a remote TMDb poster. In that case,
-        # preserve the update by sending the caption as a text message instead.
-        image_problem = any(phrase in description.lower() for phrase in (
-            "failed to get http url content", "wrong type of the web page content",
-            "wrong file identifier", "failed to fetch", "photo_invalid_dimensions",
-            "image_process_failed", "wrong http url", "url host is empty",
-        ))
-        if not image_problem:
-            raise RuntimeError(f"Telegram sendPhoto failed (HTTP {response.status_code}): {description}")
-        log.info("Retrying %s as a text post after poster fetch failure", name)
-        response = await client.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={"chat_id": CHANNEL, "text": caption,
-                  "parse_mode": "HTML", "reply_markup": {"inline_keyboard": buttons},
-                  "disable_web_page_preview": True})
-        result = response.json()
-        if not response.is_success or not result.get("ok"):
-            description = result.get("description", "Unknown Telegram error")
-            raise RuntimeError(f"Telegram sendMessage failed (HTTP {response.status_code}): {description}")
+        raise RuntimeError(f"Telegram poster upload failed (HTTP {response.status_code}): {description}")
     record(key, name, language, "published", result["result"]["message_id"])
     log.info("Published %s", name)
     await notify_log(f"✅ Movie/OTT post published\nTitle: {name}\nLanguage: {language}\nType: {kind}\nTMDb ID: {ident}\nTelegram message ID: {result['result']['message_id']}\nTime: {datetime.now(TZ):%Y-%m-%d %H:%M} {TZ}")
