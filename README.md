@@ -88,3 +88,15 @@ sudo journalctl -u movie-ott-bot -n 25 --no-pager -l
 ```
 
 The test checks bot membership and post permission, then sends **one** test message. For private channels use the numeric `-100...` ID, and grant the bot administrator permission to post. If Telegram rejects the request, the tool displays its description without printing the bot token. Normal publisher logs also show Telegram's error description without logging token-bearing HTTP request URLs. If a bot token has appeared in old logs or screenshots, revoke it through BotFather and update the VPS `.env` before restarting.
+
+## Welcome message and admin buttons
+
+The bot now runs private-chat /start commands through `script.py` alongside its existing scheduled publisher. Welcome settings and URL buttons persist in MySQL. Set `OWNER_ID` to your numeric Telegram user ID and optionally `ADMIN_IDS` to comma-separated numeric user IDs in the VPS `.env`. Do not put these IDs in source code. The owner may manage all commands; listed admins may manage buttons only.
+
+Owner: send a Telegram **photo with caption** `/setstartphoto`, or `/setstartphoto https://example.com/image.jpg`. Use `/removestartphoto` to remove it. Set text with `/setstarttext Your message` (plain text). Photos have a Telegram caption limit of 1024 characters; longer text is sent as a follow-up message.
+
+Admins: `/addbutton Movie Channel | https://t.me/example`, `/listbuttons`, `/removebutton 1`. Each button occupies one row. Use `/starthelp` to see your permitted commands. Changes take effect on the next `/start` without restarting.
+
+**Important:** Only one process may use Telegram `getUpdates` with this bot token. Remove any webhook and stop other polling bots using the same token before enabling the welcome feature. The bot only handles commands in private chat. A missing `OWNER_ID` disables command polling but leaves scheduled publishing active.
+
+Deployment: pull GitHub main, set `OWNER_ID` and `ADMIN_IDS` in `.env`, compile `script.py` and `app/main.py`, then restart `movie-ott-bot`. Do not share `.env` or token-bearing HTTP logs.
