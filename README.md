@@ -31,3 +31,14 @@ Set `BOT_TOKEN`, `CHANNEL_ID`, `TMDB_API_KEY`, `MYSQL_PASSWORD` in `.env`. Add t
 **Important:** Never commit your real `.env`, bot token, database password, or TMDb key. This code has not been tested against your production VPS. Verify it in dry-run mode before enabling automatic posting.
 
 TMDb data and images are subject to TMDb attribution and usage requirements; consult their API terms before production use.
+
+## Check setup (safe, no posts)
+
+After configuring `.env` and the MySQL user, run:
+
+```bash
+cd /opt/movie-ott-bot
+venv/bin/python -m app.check_setup
+```
+
+This checks required settings, initializes MySQL tables, verifies TMDb credentials, and prints the daily posting target. It does not send Telegram messages. It explicitly loads `.env` and avoids the `load_dotenv()` stdin `AssertionError` seen with `python -` snippets. Do not paste `.env` contents into chat or commit secrets.
