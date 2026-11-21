@@ -157,24 +157,35 @@ async def publish(client, item):
 
 async def tick():
     hour = datetime.now(TZ).hour
-    if not int(os.getenv("POST_START_HOUR", "9")) <= hour < int(os.getenv("POST_END_HOUR", "22")):
+    start = int(os.getenv("POST_START_HOUR", "9"))
+    end = int(os.getenv("POST_END_HOUR", "22"))
+    if not 0 <= start < end <= 24:
+        log.error("Invalid publishing window: %s-%s", start, end)
+        return
+    if not start <= hour < end:
+        log.info("Skipping tick: outside publishing hours (%02d:00-%02d:00 %s); current time %s",
+                 start, end, TZ, datetime.now(TZ).strftime("%Y-%m-%d %H:%M"))
         return
     try:
         count, goal = today_count(), target()
+        log.info("Publishing tick: %s/%s posts today; dry_run=%s", count, goal, DRY)
         if count >= goal:
+            log.info("Skipping tick: daily target reached")
             return
         # Hourly pacing spreads posts across the configured publishing window.
-        start = int(os.getenv("POST_START_HOUR", "9"))
-        end = int(os.getenv("POST_END_HOUR", "22"))
         elapsed = max(1, hour - start + 1)
         allowance = max(1, (goal * elapsed + (end - start) - 1) // (end - start))
         if count >= allowance:
+            log.info("Skipping tick: pacing limit reached (%s/%s allowed so far)", count, allowance)
             return
         async with httpx.AsyncClient(timeout=25) as client:
-            for item in await candidates(client):
+            available = await candidates(client)
+            for item in available:
                 if not seen(f"tmdb:{item[0]}:{item[1]}"):
                     await publish(client, item)
                     break
+            else:
+                log.warning("No new eligible TMDb titles found among %s candidates", len(available))
     except Exception:
         log.exception("Publishing tick failed")
 
@@ -182,8 +193,12 @@ async def tick():
 async def main():
     init_db()
     scheduler = AsyncIOScheduler(timezone=TZ)
-    scheduler.add_job(tick, "interval", minutes=30, max_instances=1, coalesce=True)
+    scheduler.add_job(tick, "cron", minute="0,30", max_instances=1, coalesce=True)
     scheduler.start()
+    log.info("Publisher started: timezone=%s, window=%02d:00-%02d:00, dry_run=%s, next_check=%s",
+             TZ, int(os.getenv("POST_START_HOUR", "9")),
+             int(os.getenv("POST_END_HOUR", "22")), DRY,
+             scheduler.get_jobs()[0].next_run_time)
     await tick()
     while True:
         await asyncio.sleep(3600)
