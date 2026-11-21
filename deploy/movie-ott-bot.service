@@ -1,0 +1,22 @@
+[Unit]
+Description=Movie and OTT Telegram Publisher
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=moviebot
+Group=moviebot
+WorkingDirectory=/opt/movie-ott-bot
+EnvironmentFile=/opt/movie-ott-bot/.env
+ExecStart=/opt/movie-ott-bot/venv/bin/python -m app.main
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/movie-ott-bot
+
+[Install]
+WantedBy=multi-user.target
