@@ -51,3 +51,26 @@ venv/bin/python -m app.check_telegram
 ```
 
 The command checks bot identity, destination channel and administrator posting rights using Telegram's read-only API methods. It does not publish. Keep `DRY_RUN=true` until verification and a controlled posting test are complete. Avoid sharing tokens or HTTP request URLs in logs.
+
+
+## Optional Telegram operations log channel
+
+Create a **private Telegram channel** for bot activity. Add the same bot as an administrator with permission to post messages. Obtain the channel's numeric ID (typically `-100...`) or use a public channel username, then set `LOG_CHANNEL_ID` in your VPS `.env`.
+
+```env
+LOG_CHANNEL_ID=-1001234567890
+```
+
+With this setting the bot sends startup status, successful post details (title, language, message ID and timestamp), no-candidate warnings, and publishing failure alerts to the log channel. A log delivery failure is written to the VPS journal but does not interrupt movie publishing. The log channel is optional; leave `LOG_CHANNEL_ID` empty to disable it.
+
+After editing `.env`, deploy and restart:
+
+```bash
+cd /opt/movie-ott-bot
+git pull --ff-only origin main
+venv/bin/python -m py_compile app/main.py
+sudo systemctl restart movie-ott-bot
+sudo journalctl -u movie-ott-bot -n 40 --no-pager
+```
+
+The bot sends a startup notification on restart. Never paste or commit the real bot token or other secrets.
