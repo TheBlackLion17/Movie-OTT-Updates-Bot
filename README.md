@@ -42,3 +42,12 @@ venv/bin/python -m app.check_setup
 ```
 
 This checks required settings, initializes MySQL tables, verifies TMDb credentials, and prints the daily posting target. It does not send Telegram messages. It explicitly loads `.env` and avoids the `load_dotenv()` stdin `AssertionError` seen with `python -` snippets. Do not paste `.env` contents into chat or commit secrets.
+
+## Verify Telegram channel permissions (no posts)
+
+```bash
+cd /opt/movie-ott-bot
+venv/bin/python -m app.check_telegram
+```
+
+The command checks bot identity, destination channel and administrator posting rights using Telegram's read-only API methods. It does not publish. Keep `DRY_RUN=true` until verification and a controlled posting test are complete. Avoid sharing tokens or HTTP request URLs in logs.
