@@ -18,6 +18,7 @@ log = logging.getLogger("movie-ott")
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL_ID"]
 KEY = os.environ["TMDB_API_KEY"]
+LOG_CHANNEL = os.getenv("LOG_CHANNEL_ID", "").strip()
 TZ = ZoneInfo(os.getenv("TIMEZONE", "Asia/Kolkata"))
 DRY = os.getenv("DRY_RUN", "true").lower() == "true"
 LANGS = [("ml", "Malayalam"), ("ta", "Tamil"), ("te", "Telugu"),
@@ -82,6 +83,24 @@ def record(key, title, language, status, message_id=None):
         cur.execute("""INSERT INTO posts(source_key,title,language,status,telegram_message_id,published_at)
             VALUES (%s,%s,%s,%s,%s,IF(%s='published',UTC_TIMESTAMP(),NULL))""",
             (key, title[:255], language, status, message_id, status))
+
+
+async def notify_log(message):
+    """Send operational alerts to a separate Telegram channel, if configured."""
+    if not LOG_CHANNEL:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                json={"chat_id": LOG_CHANNEL, "text": message[:4000],
+                      "disable_web_page_preview": True})
+            response.raise_for_status()
+            if not response.json().get("ok"):
+                raise RuntimeError("Telegram rejected log notification")
+    except Exception as exc:
+        # Never crash publishing because the optional log channel failed.
+        log.warning("Log channel notification failed: %s", type(exc).__name__)
 
 
 async def tmdb(client, path, **params):
@@ -152,6 +171,7 @@ async def publish(client, item):
         raise RuntimeError(str(result.get("description")))
     record(key, name, language, "published", result["result"]["message_id"])
     log.info("Published %s", name)
+    await notify_log(f"✅ Movie/OTT post published\nTitle: {name}\nLanguage: {language}\nType: {kind}\nTMDb ID: {ident}\nTelegram message ID: {result['result']['message_id']}\nTime: {datetime.now(TZ):%Y-%m-%d %H:%M} {TZ}")
     return True
 
 
@@ -186,8 +206,10 @@ async def tick():
                     break
             else:
                 log.warning("No new eligible TMDb titles found among %s candidates", len(available))
-    except Exception:
+                await notify_log(f"⚠️ No new eligible TMDb titles found ({len(available)} checked).")
+    except Exception as exc:
         log.exception("Publishing tick failed")
+        await notify_log(f"❌ Publishing tick failed\nError type: {type(exc).__name__}\nTime: {datetime.now(TZ):%Y-%m-%d %H:%M} {TZ}\nCheck VPS journal for details.")
 
 
 async def main():
@@ -199,6 +221,7 @@ async def main():
              TZ, int(os.getenv("POST_START_HOUR", "9")),
              int(os.getenv("POST_END_HOUR", "22")), DRY,
              scheduler.get_jobs()[0].next_run_time)
+    await notify_log(f"🤖 Movie & OTT Updates Bot started\nStatus: Online\nMain channel: {CHANNEL}\nMode: {'DRY RUN' if DRY else 'LIVE'}\nTimezone: {TZ}\nPublishing hours: {os.getenv('POST_START_HOUR', '9')}:00–{os.getenv('POST_END_HOUR', '22')}:00\nNext scheduled check: {scheduler.get_jobs()[0].next_run_time:%Y-%m-%d %H:%M %Z}")
     await tick()
     while True:
         await asyncio.sleep(3600)
