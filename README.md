@@ -74,3 +74,17 @@ sudo journalctl -u movie-ott-bot -n 40 --no-pager
 ```
 
 The bot sends a startup notification on restart. Never paste or commit the real bot token or other secrets.
+
+## Diagnose a log-channel HTTP 400 error
+
+After configuring `LOG_CHANNEL_ID` in your VPS `.env`, run:
+
+```bash
+cd /opt/movie-ott-bot
+git pull --ff-only origin main
+venv/bin/python -m app.check_log_channel
+sudo systemctl restart movie-ott-bot
+sudo journalctl -u movie-ott-bot -n 25 --no-pager -l
+```
+
+The test checks bot membership and post permission, then sends **one** test message. For private channels use the numeric `-100...` ID, and grant the bot administrator permission to post. If Telegram rejects the request, the tool displays its description without printing the bot token. Normal publisher logs also show Telegram's error description without logging token-bearing HTTP request URLs. If a bot token has appeared in old logs or screenshots, revoke it through BotFather and update the VPS `.env` before restarting.
