@@ -11,6 +11,7 @@ import httpx
 import pymysql
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
+from script import init_welcome_db, welcome_loop
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -221,6 +222,8 @@ async def tick():
 
 async def main():
     init_db()
+    init_welcome_db(db)
+    welcome_task = asyncio.create_task(welcome_loop(db, TOKEN))
     scheduler = AsyncIOScheduler(timezone=TZ)
     scheduler.add_job(tick, "cron", minute="0,30", max_instances=1, coalesce=True)
     scheduler.start()
@@ -230,8 +233,12 @@ async def main():
              scheduler.get_jobs()[0].next_run_time)
     await notify_log(f"🤖 Movie & OTT Updates Bot started\nStatus: Online\nMain channel: {CHANNEL}\nMode: {'DRY RUN' if DRY else 'LIVE'}\nTimezone: {TZ}\nPublishing hours: {os.getenv('POST_START_HOUR', '9')}:00–{os.getenv('POST_END_HOUR', '22')}:00\nNext scheduled check: {scheduler.get_jobs()[0].next_run_time:%Y-%m-%d %H:%M %Z}")
     await tick()
-    while True:
-        await asyncio.sleep(3600)
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    finally:
+        welcome_task.cancel()
+        await asyncio.gather(welcome_task, return_exceptions=True)
 
 
 if __name__ == "__main__":
