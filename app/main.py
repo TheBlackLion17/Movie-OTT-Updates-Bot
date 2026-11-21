@@ -173,10 +173,29 @@ async def publish(client, item):
         f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
         json={"chat_id": CHANNEL, "photo": poster, "caption": caption,
               "parse_mode": "HTML", "reply_markup": {"inline_keyboard": buttons}})
-    response.raise_for_status()
     result = response.json()
-    if not result.get("ok"):
-        raise RuntimeError(str(result.get("description")))
+    if not response.is_success or not result.get("ok"):
+        description = result.get("description", "Unknown Telegram error")
+        log.warning("Telegram sendPhoto failed (HTTP %s): %s", response.status_code, description)
+        # Telegram sometimes cannot fetch a remote TMDb poster. In that case,
+        # preserve the update by sending the caption as a text message instead.
+        image_problem = any(phrase in description.lower() for phrase in (
+            "failed to get http url content", "wrong type of the web page content",
+            "wrong file identifier", "failed to fetch", "photo_invalid_dimensions",
+            "image_process_failed", "wrong http url", "url host is empty",
+        ))
+        if not image_problem:
+            raise RuntimeError(f"Telegram sendPhoto failed (HTTP {response.status_code}): {description}")
+        log.info("Retrying %s as a text post after poster fetch failure", name)
+        response = await client.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            json={"chat_id": CHANNEL, "text": caption,
+                  "parse_mode": "HTML", "reply_markup": {"inline_keyboard": buttons},
+                  "disable_web_page_preview": True})
+        result = response.json()
+        if not response.is_success or not result.get("ok"):
+            description = result.get("description", "Unknown Telegram error")
+            raise RuntimeError(f"Telegram sendMessage failed (HTTP {response.status_code}): {description}")
     record(key, name, language, "published", result["result"]["message_id"])
     log.info("Published %s", name)
     await notify_log(f"✅ Movie/OTT post published\nTitle: {name}\nLanguage: {language}\nType: {kind}\nTMDb ID: {ident}\nTelegram message ID: {result['result']['message_id']}\nTime: {datetime.now(TZ):%Y-%m-%d %H:%M} {TZ}")
