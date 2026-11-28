@@ -240,7 +240,7 @@ async def tick():
 def relevant_news(title):
     import re
     headline = title.rsplit(" - ", 1)[0].casefold()
-    blocked = r"\b(casino|bonus code|gas station|car crash|road closures|flooding|parade|gift guide|horse racing|concert|birthday|airport|marathon|wrestler|wwe)\b"
+    blocked = r"\b(casino|bonus code|adult film|dismemberment|murder|killer|sexual assault|sexual misconduct|arrested|crime|gas station|car crash|road closures|flooding|parade|gift guide|horse racing|concert|birthday|airport|marathon|wrestler|wwe)\b"
     wanted = r"\b(ott|box office|trailer|teaser|first look|release date|premiere|film|movie|cinema|web series|season \d+|shooting|shoot wrapped|cbfc|netflix|prime video|sonyliv)\b"
     return not re.search(blocked, headline) and bool(re.search(wanted, headline))
 
@@ -295,7 +295,7 @@ async def news_tick():
                     key = "news:" + hashlib.sha256(link.encode()).hexdigest()
                     entries.append((published, key, title, link))
             except Exception as exc:
-                log.warning("News feed failed: %s", type(exc).__name__)
+                log.warning("News feed failed: %s (HTTP %s), feed=%s", type(exc).__name__, exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else "n/a", urls.index(url) + 1)
         import re
         processed = 0
         headlines = set()
