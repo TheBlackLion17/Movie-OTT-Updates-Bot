@@ -237,6 +237,14 @@ async def tick():
 
 
 
+def relevant_news(title):
+    import re
+    headline = title.rsplit(" - ", 1)[0].casefold()
+    blocked = r"\b(casino|bonus code|gas station|car crash|road closures|flooding|parade|gift guide|horse racing|concert|birthday|airport|marathon|wrestler|wwe)\b"
+    wanted = r"\b(ott|box office|trailer|teaser|first look|release date|premiere|film|movie|cinema|web series|season \d+|shooting|shoot wrapped|cbfc|netflix|prime video|sonyliv)\b"
+    return not re.search(blocked, headline) and bool(re.search(wanted, headline))
+
+
 def news_sources():
     return [u.strip() for u in os.getenv("NEWS_RSS_URLS", "").split(",") if u.strip()]
 
@@ -282,17 +290,27 @@ async def news_tick():
                             continue
                     except (ValueError, TypeError, OverflowError):
                         continue
-                    if not title or urlparse(link).scheme not in ("https", "http"):
+                    if not title or not relevant_news(title) or urlparse(link).scheme not in ("https", "http"):
                         continue
                     key = "news:" + hashlib.sha256(link.encode()).hexdigest()
                     entries.append((published, key, title, link))
             except Exception as exc:
                 log.warning("News feed failed: %s", type(exc).__name__)
+        import re
+        processed = 0
+        headlines = set()
+        limit = max(1, min(20, int(os.getenv("NEWS_MAX_PER_CHECK", "5"))))
         for published, key, title, link in sorted(entries, reverse=True):
             try:
-                if seen(key):
+                normalized = re.sub(r"[^\w]+", " ", title.rsplit(" - ", 1)[0].casefold()).strip()
+                headline_key = "headline:" + hashlib.sha256(normalized.encode()).hexdigest()
+                if normalized in headlines or seen(key) or seen(headline_key):
                     continue
+                headlines.add(normalized)
+                if processed >= limit:
+                    break
                 if DRY:
+                    processed += 1
                     log.info("DRY RUN news: %s", title)
                     continue
                 caption = "📰 <b>Latest Entertainment News</b>\n\n" + html.escape(title[:500]) + "\n\n📅 " + published.astimezone(TZ).strftime("%d %b %Y, %I:%M %p") + "\n\n#MovieNews #Entertainment"
@@ -305,6 +323,8 @@ async def news_tick():
                     log.warning("News publishing rejected (HTTP %s)", response.status_code)
                     continue
                 record(key, title, "News", "published", result["result"]["message_id"])
+                record(headline_key, title, "News", "dedup", result["result"]["message_id"])
+                processed += 1
                 await notify_log("News published: " + title[:250])
                 await asyncio.sleep(1)
             except Exception as exc:
